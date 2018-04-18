@@ -8,6 +8,7 @@ output: rmarkdown::github_document
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE, warning = FALSE)
 ```
+リファレンス：[解析 | 発現変動 | 2群間 | 対応なし | 複製あり | DESeq2(Love_2014)](www.iu.a.u-tokyo.ac.jp/~kadota/r_seq.html#analysis_deg_2_unpaired_ari_DESeq2)
 
 [DESeq2](http://bioconductor.org/packages/release/bioc/html/DESeq2.html)パッケージ [(Love et al., Genome Biol., 2014)](http://www.ncbi.nlm.nih.gov/pubmed/25516281)を用いるやり方を示します。
 「ファイル」−「ディレクトリの変更」で解析したいファイルを置いてあるディレクトリに移動し以下をコピペ。
@@ -127,19 +128,23 @@ rld <- rlog(d)
 plotPCA(rld, intgroup=c("condition"))
 ```
 
-### 8. AUC値（Or ConfusionMatrix）を計算（Simulation Data Only）
+### 8. AUC値（と ConfusionMatrix）を計算（Simulation Data Only）
 
-AUC値より、今回はConfusionMatrixを計算する。
+AUC値とConfusionMatrixを計算する。
 ```{r auc}
+# ROCパッケージはCRANにいないため、インストールされていない場合は下記のコードを実行してインストールしてください。
 # source("https://bioconductor.org/biocLite.R")
 # biocLite("ROC")
-# library(ROC)
+library(ROC)
 param_DEG <- 1:2000                    #DEGの位置を指定
 obj <- rep(0, nrow(data))           #初期値として全てが0の(non-DEGに相当)ベクトルobjを作成
 obj[param_DEG] <- 1                    #DEGの位置に1を代入
-# AUC(rocdemo.sca(truth=obj, data=-ranking))#AUC計算
+AUC(rocdemo.sca(truth=obj, data=-ranking))#AUC計算
 
 deg_count <- sum(p.adjust(p.value, method="BH") < param_FDR)
 prediction <- if_else(output$ranking <= deg_count, 1, 0)
 confusionMatrix(prediction, obj)
 ```
+
+> - [TCC](http://bioconductor.org/packages/release/bioc/html/TCC.html): [Sun et al., BMC Bioinformatics, 2013](http://www.ncbi.nlm.nih.gov/pubmed/23837715)
+> - [DESeq2](http://bioconductor.org/packages/release/bioc/html/DESeq2.html): [Love et al., Genome Biol., 2014](http://www.ncbi.nlm.nih.gov/pubmed/25516281)

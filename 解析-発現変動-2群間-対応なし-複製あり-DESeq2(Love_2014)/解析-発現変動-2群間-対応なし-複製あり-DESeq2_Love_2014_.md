@@ -3,6 +3,9 @@
 Kadota, Su
 2018年4月17日
 
+リファレンス：[解析 | 発現変動 | 2群間 | 対応なし | 複製あり |
+DESeq2(Love\_2014)](www.iu.a.u-tokyo.ac.jp/~kadota/r_seq.html#analysis_deg_2_unpaired_ari_DESeq2)
+
 [DESeq2](http://bioconductor.org/packages/release/bioc/html/DESeq2.html)パッケージ
 [(Love et al., Genome
 Biol., 2014)](http://www.ncbi.nlm.nih.gov/pubmed/25516281)を用いるやり方を示します。
@@ -273,19 +276,26 @@ plotPCA(rld, intgroup=c("condition"))
 
 ![](解析-発現変動-2群間-対応なし-複製あり-DESeq2_Love_2014__files/figure-gfm/pca-1.png)<!-- -->
 
-### 8\. AUC値（Or ConfusionMatrix）を計算（Simulation Data Only）
+### 8\. AUC値（と ConfusionMatrix）を計算（Simulation Data Only）
 
-AUC値より、今回はConfusionMatrixを計算する。
+AUC値とConfusionMatrixを計算する。
 
 ``` r
+# ROCパッケージはCRANにいないため、インストールされていない場合は下記のコードを実行してインストールしてください。
 # source("https://bioconductor.org/biocLite.R")
 # biocLite("ROC")
-# library(ROC)
+library(ROC)
 param_DEG <- 1:2000                    #DEGの位置を指定
 obj <- rep(0, nrow(data))           #初期値として全てが0の(non-DEGに相当)ベクトルobjを作成
 obj[param_DEG] <- 1                    #DEGの位置に1を代入
-# AUC(rocdemo.sca(truth=obj, data=-ranking))#AUC計算
+AUC(rocdemo.sca(truth=obj, data=-ranking))#AUC計算
+```
 
+    ## NA in cutpts forces recomputation using smallest gap
+
+    ## [1] 0.8341681
+
+``` r
 deg_count <- sum(p.adjust(p.value, method="BH") < param_FDR)
 prediction <- if_else(output$ranking <= deg_count, 1, 0)
 confusionMatrix(prediction, obj)
@@ -316,4 +326,11 @@ confusionMatrix(prediction, obj)
     ##       Balanced Accuracy : 0.7469          
     ##                                           
     ##        'Positive' Class : 0               
-    ##
+    ## 
+
+>   - [TCC](http://bioconductor.org/packages/release/bioc/html/TCC.html):
+>     [Sun et al., BMC
+>     Bioinformatics, 2013](http://www.ncbi.nlm.nih.gov/pubmed/23837715)
+>   - [DESeq2](http://bioconductor.org/packages/release/bioc/html/DESeq2.html):
+>     [Love et al., Genome
+>     Biol., 2014](http://www.ncbi.nlm.nih.gov/pubmed/25516281)
