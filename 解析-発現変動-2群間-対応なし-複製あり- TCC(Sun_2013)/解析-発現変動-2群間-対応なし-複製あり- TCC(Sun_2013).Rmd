@@ -1,0 +1,224 @@
+---
+title: "解析 | 発現変動 | 2群間 | 対応なし | 複製あり | TCC(Sun_2013)"
+author: "Kadota, Su"
+date: "2018年4月24日"
+output: rmarkdown::github_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE)
+```
+リファレンス：[解析 | 発現変動 | 2群間 | 対応なし | 複製あり | TCC(Sun_2013)](www.iu.a.u-tokyo.ac.jp/~kadota/r_seq.html#analysis_deg_2_unpaired_ari_TCC)
+
+[TCC](http://bioconductor.org/packages/release/bioc/html/TCC.html)を用いたやり方を示します。 内部的に[iDEGES/edgeR(Sun_2013)](http://www.iu.a.u-tokyo.ac.jp/~kadota/r_seq.html#normalization_inter_2_ari_iDEGESedgeR)正規化を実行したのち、 [edgeR](http://bioconductor.org/packages/release/bioc/html/edgeR.html)パッケージ中のexact testで発現変動遺伝子(Differentially expressed Genes; DEGs)検出を行っています。TCC原著論文中のiDEGES/edgeR-edgeRという解析パイプラインに相当します。 全て[TCC](http://bioconductor.org/packages/release/bioc/html/TCC.html)パッケージ([Sun et al., BMC Bioinformatics, 2013](http://www.ncbi.nlm.nih.gov/pubmed/23837715))内で完結します。
+「ファイル」−「ディレクトリの変更」で解析したいファイルを置いてあるディレクトリに移動し以下をコピペ。
+
+**サンプルデータ13の10,000 genes × 6 samplesの[カウントデータ](http://www.iu.a.u-tokyo.ac.jp/~kadota/R_seq/data_hypodata_3vs3.txt)の場合：**  
+
+Biological replicatesを模倣したシミュレーションデータ(G1群3サンプル vs. G2群3サンプル)です。 gene_1〜gene_2000までがDEG (最初の1800個がG1群で高発現、残りの200個がG2群で高発現) gene_2001〜gene_10000までがnon-DEGであることが既知です。 
+
+### 0. 必要なパッケージをロード
+```{r package_download, message=FALSE}
+libs <- c("knitr", "dplyr", "caret", "devtools", "plotly")
+for (i in libs){
+  if( !is.element(i, .packages(all.available = TRUE)) ) {
+    install.packages(i)
+  }
+  library(i,character.only = TRUE)
+}
+
+# TCC及びROCパッケージはCRANにいないため、インストールされていない場合は下記のコードを実行してインストールしてください。
+# source("https://bioconductor.org/biocLite.R")
+# biocLite("TCC")
+# biocLite("ROC")
+
+library(ROC)
+```
+
+> 2018年4月の時点で、TCCパッケージをロードする時に、samrパッケージを先にロードする必要があります。しかし、CRANにあるsamrパッケージはR-3.0.0ではインストールできない状態になっている。予備の方法の一つとして、著者がGithubにアップロードしたsamrをインストールしかない。更に、samrが必要となりimputeパッケージもCRANに除外され、Bioconductor経由でインストールします。
+
+```{r repaire package installation}
+# 下記のコードを実行すると別のツールのインストールも必要されているかもしれません
+# install_github("bnaras/samr")　　#メモ
+
+# 下記のコードも使えない、CRANに除外されましたので、Bioconductorでインストールする
+# install.packages("impute")  　　#メモ
+# source("https://bioconductor.org/biocLite.R")
+# biocLite("impute")
+
+# もう一回samrをインストールしてみる
+# install_github("bnaras/samr")
+
+library(TCC)
+```
+これで、修復完了です。
+
+### 1. 設置及びファイルの読み込み
+```{r setup_environment}
+in_f <- "http://www.iu.a.u-tokyo.ac.jp/~kadota/R_seq/data_hypodata_3vs3.txt"
+# out_f1 <- "hoge1.txt"                  #出力ファイル名を指定してout_f1に格納
+# out_f2 <- "hoge1.png"                  #出力ファイル名を指定してout_f2に格納
+param_G1 <- 3                          #G1群のサンプル数を指定
+param_G2 <- 3                          #G2群のサンプル数を指定
+param_FDR <- 0.05                      #false discovery rate (FDR)閾値を指定
+# param_fig <- c(400, 380)               #ファイル出力時の横幅と縦幅を指定(単位はピクセル)
+
+#入力ファイルの読み込み
+data <- read.table(in_f, 
+                   header=TRUE, 
+                   row.names=1, 
+                   sep="\t", 
+                   quote="")           #in_fで指定したファイルの読み込み
+
+kable(head(data, n=10))
+```
+
+### 2. 前処理
+TCCクラスオブジェクトの作成する。
+
+```{r create_object}
+#G1群を1、G2群を2としたベクトルdata.clを作成
+data.cl <- c(rep(1, param_G1), rep(2, param_G2))
+data.cl
+
+#TCCクラスオブジェクトtccを作成
+tcc <- new("TCC", data, data.cl)       
+```
+
+### 3. 正規化
+
+
+```{r normalization}
+#正規化を実行した結果をtccに格納
+tcc <- calcNormFactors(tcc, 
+                       norm.method="tmm",
+                       test.method="edger",
+                       iteration=3, 
+                       FDR=0.1, 
+                       floorPDEG=0.05)
+tcc
+```
+
+### 4. DEG検出
+```{r deg}
+tcc <- estimateDE(tcc, 
+                  test.method="edger",
+                  FDR=param_FDR)       #DEG検出を実行した結果をtccに格納
+tcc
+result <- getResult(tcc, sort=FALSE)   #p値などの計算結果をresultに格納
+kable(head(result, n=10))
+sum(tcc$stat$q.value < param_FDR)      #条件を満たす遺伝子数を表示
+```
+
+### 5. ファイルに保存(テキストファイル)
+```{r save_text}
+#入力データの右側にDEG検出結果を結合したものをtmpに格納
+tmp <- cbind(rownames(tcc$count), tcc$count, result)
+kable(head(tmp, n=10))
+
+#tmpの中身を指定したファイル名で保存
+# write.table(tmp, out_f1, sep="\t", append=F, quote=F, row.names=F)
+
+```
+
+### 6. M-A plot
+```{r ma_plot}
+# Method 1
+# png(out_f2, 
+#     pointsize=13, 
+#     width=param_fig[1], 
+#     height=param_fig[2])     #出力ファイルの各種パラメータを指定
+
+#param_FDRで指定した閾値を満たすDEGをマゼンタ色にして描画
+plot(tcc, FDR=param_FDR)
+#凡例を作成
+legend("topright", 
+       c(paste("DEG(FDR<", param_FDR, ")", sep=""), 
+         "non-DEG"),           
+       col=c("magenta", "black"), 
+       pch=20)
+# dev.off()                              #おまじない
+
+
+# Method 2
+x <- factor(result$estimatedDEG)
+levels(x) <- list("non-DEG"=0, "DEG"=1)  #LegendのLevelをリネームする
+
+plot_ly(data = result, 
+        x = ~a.value, 
+        y = ~m.value, 
+        mode = "marker",
+        type = "scatter",
+        color = ~x,
+        colors = c("#000000","#DC143C"),
+        marker = list(size = 3),
+        hoverinfo = 'text',
+        text = ~paste("</br>Gene: ", gene_id,
+                     "</br>p-value: ", p.value,
+                     "</br>q-value: ", q.value,
+                     "</br>rank: ", rank)) %>%
+  layout(xaxis = list(title = "A = (log2(G2)+log2(G1))/2"),
+         yaxis = list(title = "M = log2(G2)-log2(G1)"),
+         title = "MA plot")
+```
+
+### 7. 主成分分析
+
+```{r pca}
+# rld <- rlog(d)
+# plotPCA(rld, intgroup=c("condition"))
+nor_data <- tcc$getNormalizedData()
+# DEGの名前
+deg_list <- result[result$estimatedDEG==1, ]$gene_id
+# DEGだけのデータを抽出
+deg_nor_data <- nor_data[which(row.names(nor_data) %in% deg_list),]
+kable(head(deg_nor_data, n = 10))
+
+# log 変換及び転置
+log.deg_nor_data <- t(log(deg_nor_data + 0.001))
+
+# 全てのサンプルでの発現量が同じの遺伝子を除去する
+#（しないとPCAでのScaleができない）
+pca_data <- log.deg_nor_data[, apply(log.deg_nor_data, 2, var)!= 0]
+
+# PCAを行う
+pca_result <- prcomp(pca_data,
+                     center = TRUE,
+                     scale. = TRUE) 
+summary(pca_result)
+
+plot(pca_result, type = 'l')
+
+# よりきれいな図を出すために、ggbiplotをインストールする
+# install_github("vqv/ggbiplot")
+library(ggbiplot)
+g <- ggbiplot(pca_result, obs.scale = 1, var.scale = 1, 
+              var.axes = FALSE,
+              groups = factor(data.cl), ellipse = TRUE, 
+              circle = TRUE)
+g <- g + scale_color_discrete(name = '')
+g <- g + theme(legend.direction = 'horizontal', 
+               legend.position = 'top')
+print(g)
+```
+
+### 8. AUC値（と ConfusionMatrix）を計算（Simulation Data Only）
+
+AUC値とConfusionMatrixを計算する。
+```{r auc}
+# ROCパッケージはCRANにいないため、インストールされていない場合は下記のコードを実行してインストールしてください。
+# source("https://bioconductor.org/biocLite.R")
+# biocLite("ROC")
+library(ROC)
+param_DEG <- 1:2000                    #DEGの位置を指定
+obj <- rep(0, nrow(data))           #初期値として全てが0の(non-DEGに相当)ベクトルobjを作成
+obj[param_DEG] <- 1                    #DEGの位置に1を代入
+AUC(rocdemo.sca(truth=obj, data=-result$rank))#AUC計算
+
+deg_count <- sum(p.adjust(result$p.value, method="BH") < param_FDR)
+prediction <- if_else(result$rank <= deg_count, 1, 0)
+confusionMatrix(prediction, obj)
+```
+
+> - [TCC](http://bioconductor.org/packages/release/bioc/html/TCC.html): [Sun et al., BMC Bioinformatics, 2013](http://www.ncbi.nlm.nih.gov/pubmed/23837715)
+> - [DESeq2](http://bioconductor.org/packages/release/bioc/html/DESeq2.html): [Love et al., Genome Biol., 2014](http://www.ncbi.nlm.nih.gov/pubmed/25516281)
