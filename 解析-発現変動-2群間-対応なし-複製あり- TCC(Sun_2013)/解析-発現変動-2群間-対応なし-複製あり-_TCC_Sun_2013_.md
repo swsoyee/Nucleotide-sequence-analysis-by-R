@@ -1,7 +1,7 @@
 解析 | 発現変動 | 2群間 | 対応なし | 複製あり | TCC(Sun\_2013)
 ================
 Kadota, Su
-2018年4月24日
+2018年4月30日
 
 リファレンス：[解析 | 発現変動 | 2群間 | 対応なし | 複製あり |
 TCC(Sun\_2013)](www.iu.a.u-tokyo.ac.jp/~kadota/r_seq.html#analysis_deg_2_unpaired_ari_TCC)
@@ -16,8 +16,9 @@ et al., BMC
 Bioinformatics, 2013](http://www.ncbi.nlm.nih.gov/pubmed/23837715))内で完結します。
 「ファイル」−「ディレクトリの変更」で解析したいファイルを置いてあるディレクトリに移動し以下をコピペ。
 
-**サンプルデータ13の10,000 genes × 6
-samplesの[カウントデータ](http://www.iu.a.u-tokyo.ac.jp/~kadota/R_seq/data_hypodata_3vs3.txt)の場合：**
+## 1\. サンプルデータ13の10,000 genes × 6 samplesの[カウントデータ](http://www.iu.a.u-tokyo.ac.jp/~kadota/R_seq/data_hypodata_3vs3.txt)の場合：
+
+-----
 
 Biological replicatesを模倣したシミュレーションデータ(G1群3サンプル vs. G2群3サンプル)です。
 gene\_1〜gene\_2000までがDEG (最初の1800個がG1群で高発現、残りの200個がG2群で高発現)
@@ -145,7 +146,7 @@ tcc
     ## 
     ## DEGES:
     ##    Pipeline       : tmm - [ edger - tmm ] X 3
-    ##    Execution time : 15.1 sec
+    ##    Execution time : 10.0 sec
     ##    Threshold type : FDR < 0.10
     ##    Potential PDEG : 0.13
 
@@ -178,7 +179,7 @@ tcc
     ## 
     ## DEGES:
     ##    Pipeline       : tmm - [ edger - tmm ] X 3
-    ##    Execution time : 15.1 sec
+    ##    Execution time : 10.0 sec
     ##    Threshold type : FDR < 0.10
     ##    Potential PDEG : 0.13
     ## 
@@ -409,9 +410,288 @@ confusionMatrix(prediction, obj)
     ##        'Positive' Class : 0               
     ## 
 
+## 2\. サンプルデータ13の10,000 genes × 6 samplesの[カウントデータ](http://www.iu.a.u-tokyo.ac.jp/~kadota/R_seq/data_hypodata_3vs3.txt)の場合：
+
+-----
+
+Biological replicatesを模倣したシミュレーションデータ(G1群3サンプル vs. G2群3サンプル)です。
+gene\_1〜gene\_2000までがDEG (最初の1800個がG1群で高発現、残りの200個がG2群で高発現)
+gene\_2001〜gene\_10000までがnon-DEGであることが既知です。
+正規化後のテキストファイルデータを出力し、平均-分散プロットのpngファイルを出力しています。
+
+``` r
+# 正規化後のデータを取り出してnormalizedに格納、どちらも可
+# normalized <- tcc$getNormalizedData()
+normalized <- getNormalizedData(tcc)
+
+#ファイルに保存(平均-分散プロット) 
+## Method 1
+hoge <- normalized                     #正規化後のデータをhogeに格納
+MEAN <- apply(hoge, 1, mean)           #各行の平均を計算した結果をMEANに格納
+VARIANCE <- apply(hoge, 1, var)        #各行の分散を計算した結果をVARIANCEに格納
+
+# png(out_f2, pointsize=13, width=param_fig[1], height=param_fig[2])#出力ファイルの各種パラメータを指定
+plot(MEAN, 
+     VARIANCE, 
+     log="xy", 
+     pch=20, 
+     cex=.1,
+     xlim=c(1e-02, 1e+08), 
+     ylim=c(1e-02, 1e+08), 
+     col="black")#プロット
+grid(col="gray", lty="dotted")         #指定したパラメータでグリッドを表示
+abline(a=0, b=1, col="gray")           #y=xの直線を指定した色で追加（y=a+bxのa=0, b=1）
+obj <- (result$q.value < param_FDR)    #条件を満たすかどうかを判定した結果をobjに格納
+points(MEAN[obj], 
+       VARIANCE[obj], 
+       col="magenta", 
+       cex=0.1, 
+       pch=20)                         #objがTRUEとなる要素のみ指定した色で描画
+legend("topright", 
+       c(paste("DEG(FDR<", param_FDR, ")", 
+               sep=""), "non-DEG"),    #凡例を作成
+       col=c("magenta", "black"), pch=20)#凡例を作成
+```
+
+![](解析-発現変動-2群間-対応なし-複製あり-_TCC_Sun_2013__files/figure-gfm/get%20normalized%20data-1.png)<!-- -->
+
+``` r
+## Method 2
+hoge <- as.data.frame(normalized)      #正規化後のデータをhogeに格納
+MEAN <- apply(hoge, 1, mean)           #各行の平均を計算した結果をMEANに格納
+VARIANCE <- apply(hoge, 1, var)        #各行の分散を計算した結果をVARIANCEに格納
+hoge$mean <- MEAN
+hoge$variance <- VARIANCE
+hoge$deg <- (result$q.value < param_FDR)    #条件を満たすかどうかを判定した結果をobjに格納
+
+x <- factor(hoge$deg)
+levels(x) <- list("non-DEG"=FALSE, "DEG"=TRUE)  #LegendのLevelをリネームする
+
+plot_ly(data = hoge,
+        x = ~log(mean),
+        y = ~log(variance),
+        color = ~x,
+        colors = c("#000000","#DC143C"),
+        marker = list(size = 3),
+        mode = "marker",
+        type = "scatter")
+```
+
+![](解析-発現変動-2群間-対応なし-複製あり-_TCC_Sun_2013__files/figure-gfm/get%20normalized%20data-2.png)<!-- -->
+
+## 3\. サンプルデータ13の10,000 genes × 6 samplesの[カウントデータ](http://www.iu.a.u-tokyo.ac.jp/~kadota/R_seq/data_hypodata_3vs3.txt)の場合：
+
+``` r
+in_f <- "http://www.iu.a.u-tokyo.ac.jp/~kadota/R_seq/data_marioni.txt"             #入力ファイル名を指定してin_fに格納
+out_f1 <- "hoge4.txt"                  #出力ファイル名を指定してout_f1に格納
+out_f2 <- "hoge4_FDR.png"              #出力ファイル名を指定してout_f2に格納
+out_f3 <- "hoge4_FC.png"               #出力ファイル名を指定してout_f3に格納
+param_G1 <- 5                          #G1群(kidney)のサンプル数を指定
+param_G2 <- 5                          #G2群(liver)のサンプル数を指定
+param_FDR <- 0.05                      #false discovery rate (FDR)閾値を指定
+param_FC <- 2                          #fold-change閾値(param_FC倍)を指定
+param_fig <- c(400, 380)               #MA-plot描画時の横幅と縦幅を指定(単位はピクセル)
+
+#必要なパッケージをロード
+library(TCC)                           #パッケージの読み込み
+
+#入力ファイルの読み込み
+data <- read.table(in_f, 
+                   header=TRUE, 
+                   row.names=1, 
+                   sep="\t", 
+                   quote="")           #in_fで指定したファイルの読み込み
+
+#前処理(TCCクラスオブジェクトの作成)
+data.cl <- c(rep(1, param_G1), 
+             rep(2, param_G2))  #G1群を1、G2群を2としたベクトルdata.clを作成
+tcc <- new("TCC", data, data.cl)       #TCCクラスオブジェクトtccを作成
+
+#本番(正規化)
+tcc <- calcNormFactors(tcc, 
+                       norm.method="tmm",
+                       test.method="edger",
+                       iteration=3, 
+                       FDR=0.1, 
+                       floorPDEG=0.05)  #正規化を実行した結果をtccに格納
+
+#本番(DEG検出)
+tcc <- estimateDE(tcc, 
+                  test.method="edger",
+                  FDR=param_FDR)  #DEG検出を実行した結果をtccに格納
+result <- getResult(tcc, sort=FALSE)   #p値などの計算結果をresultに格納
+
+#ファイルに保存(テキストファイル)
+#入力データの右側にDEG検出結果を結合したものをtmpに格納
+tmp <- cbind(rownames(tcc$count), 
+             tcc$count,
+             result)
+# tmpの中身を指定したファイル名で保存
+# write.table(tmp, out_f1, sep="\t", append=F, quote=F, row.names=F)
+
+#ファイルに保存(M-A plot; FDR) 
+# Method 1
+# png(out_f2, pointsize=13, width=param_fig[1], height=param_fig[2])#出力ファイルの各種パラメータを指定
+plot(tcc, 
+     FDR=param_FDR, 
+     xlim=c(-3, 13), 
+     ylim=c(-10, 10))#param_FDRで指定した閾値を満たすDEGをマゼンタ色にして描画
+legend("bottomright", 
+       c(paste("DEG(FDR<", param_FDR, ")", sep=""), "non-DEG"),
+       col=c("magenta", "black"), 
+       pch=20)   #凡例を作成
+```
+
+![](解析-発現変動-2群間-対応なし-複製あり-_TCC_Sun_2013__files/figure-gfm/marioni-1.png)<!-- -->
+
+``` r
+# Method 2
+x <- cut(result$q.value, breaks = c(0, 0.01, 0.05, 0.1, 0.15, 1))
+levels(x) <- list("DEG(FDR<0.01)"="(0,0.01]",
+                  "DEG(FDR<0.05)"="(0.01,0.05]",
+                  "DEG(FDR<0.1)"="(0.05,0.1]",
+                  "DEG(FDR<0.15)"="(0.1,0.15]",
+                  "non-DEG"="(0.15,1]")  #LegendのLevelをリネームする
+
+plot_ly(data = result, 
+        x = ~a.value, 
+        y = ~m.value, 
+        mode = "marker",
+        type = "scatter",
+        color = ~x,
+        colors = c("#B22222", "#DC143C", "#FF4500", "#FFA500", "#000000"),
+        marker = list(size = 3),
+        hoverinfo = 'text',
+        text = ~paste("</br>Gene: ", gene_id,
+                     "</br>p-value: ", round(p.value, 4),
+                     "</br>q-value: ", round(q.value, 4),
+                     "</br>rank: ", rank)) %>%
+  layout(xaxis = list(title = "A = (log2(G2)+log2(G1))/2"),
+         yaxis = list(title = "M = log2(G2)-log2(G1)"),
+         title = "MA plot")
+```
+
+![](解析-発現変動-2群間-対応なし-複製あり-_TCC_Sun_2013__files/figure-gfm/marioni-2.png)<!-- -->
+
+``` r
+#ファイルに保存(M-A plot; fold-change)
+# Method 1
+M <- getResult(tcc)$m.value            #M-A plotのM値を抽出
+hoge <- rep(1, length(M))              #初期値を1にしたベクトルhogeを作成
+hoge[abs(M) > log2(param_FC)] <- 2     #条件を満たす位置に2を代入
+cols <- c("black", "magenta")          #色情報を指定してcolsに格納
+
+# png(out_f3, pointsize=13, width=param_fig[1], height=param_fig[2])#出力ファイルの各種パラメータを指定
+plot(tcc, 
+     col=cols, 
+     col.tag=hoge, 
+     xlim=c(-3, 13), 
+     ylim=c(-10, 10))#M-A plotを描画
+legend("bottomright", 
+       c(paste("DEG(", param_FC, "-fold)", sep=""), "non-DEG"),
+       col=c("magenta", "black"), pch=20)#凡例を作成
+```
+
+![](解析-発現変動-2群間-対応なし-複製あり-_TCC_Sun_2013__files/figure-gfm/marioni-3.png)<!-- -->
+
+``` r
+sum(abs(M) > log2(16))                 #16倍以上発現変動する遺伝子数を表示
+```
+
+    ## [1] 1105
+
+``` r
+sum(abs(M) > log2(8))                  #8倍以上発現変動する遺伝子数を表示
+```
+
+    ## [1] 2054
+
+``` r
+# Method 2
+plot_ly(data = result, 
+        x = ~a.value, 
+        y = ~m.value, 
+        mode = "marker",
+        type = "scatter",
+        color = ~x,
+        colors = c("#B22222", "#DC143C", "#FF4500", "#FFA500", "#000000"),
+        marker = list(size = 3),
+        hoverinfo = 'text',
+        text = ~paste("</br>Gene: ", gene_id,
+                     "</br>p-value: ", round(p.value, 4),
+                     "</br>q-value: ", round(q.value, 4),
+                     "</br>rank: ", rank)) %>%
+  layout(xaxis = list(title = "A = (log2(G2)+log2(G1))/2"),
+         yaxis = list(title = "M = log2(G2)-log2(G1)"),
+         title = "MA plot",
+         shapes= list(list(type='line', 
+                           y0= log2(param_FC),
+                           y1= log2(param_FC), 
+                           x0=~min(a.value), 
+                           x1=~max(a.value),
+                           line=list(dash='dot', width=2)),
+                      list(type='line', 
+                           y0= -log2(param_FC),
+                           y1= -log2(param_FC), 
+                           x0=~min(a.value), 
+                           x1=~max(a.value),
+                           line=list(dash='dot', width=2))))
+```
+
+![](解析-発現変動-2群間-対応なし-複製あり-_TCC_Sun_2013__files/figure-gfm/marioni-4.png)<!-- -->
+
+## 5\. サンプルデータ4の18,110 genes×10 samplesのリアルデータ([data\_marioni.txt](http://www.iu.a.u-tokyo.ac.jp/~kadota/R_seq/data_marioni.txt); kidney 5サンプル vs. liver 5サンプル)の最初の4サンプルを比較する場合：
+
+-----
+
+「FDR閾値を満たすもの」と「fold-change閾値を満たすもの」それぞれのM-A plotを作成しています。
+
+コードとしては前とほぼ同じですので、ここで省略します。データの抽出コードは： `data <-
+data[,1:col]`
+
+## 6\. サンプルデータ8の26,221 genes×6 samplesのリアルデータ([data\_arab.txt](http://www.iu.a.u-tokyo.ac.jp/~kadota/R_seq/data_arab.txt); mock 3サンプル vs. hrcc 3サンプル)の場合：
+
+-----
+
+「FDR閾値を満たすもの」と「fold-change閾値を満たすもの」それぞれのM-A
+plotを作成しています。コード自体はほぼ同じです。
+
+## 7\. サンプルデータ13の10,000 genes×6 samplesのカウントデータ([data\_hypodata\_3vs3.txt](http://www.iu.a.u-tokyo.ac.jp/~kadota/R_seq/data_hypodata_3vs3.txt))の場合：
+
+-----
+
+Biological replicatesを模倣したシミュレーションデータ(G1群3サンプル vs. G2群3サンプル)です。
+gene\_1〜gene\_2000までがDEG (最初の1800個がG1群で高発現、残りの200個がG2群で高発現)
+gene\_2001〜gene\_10000までがnon-DEGであることが既知です。
+1.と基本的に同じで、出力のテキストファイルが正規化前のデータではなく正規化後のデータになっていて、発現変動順にソートしたものになっています。コード自体はほぼ同じです。
+発現変動順にソートするコードは： `tmp <-
+tmp[order(tmp$rank),]`
+
+## 8\. 60,234 genes×6 samplesのリアルデータ([hoge9\_count\_gene.txt](http://www.iu.a.u-tokyo.ac.jp/~kadota/R_seq/SRP017142/hoge9_count_gene.txt))の場合：
+
+-----
+
+[Neyret-Kahn et al., Genome
+Res., 2013](http://www.ncbi.nlm.nih.gov/pubmed/23893515)のgene-levelの2群間比較用(3
+proliferative samples vs. 3 Ras samples)ヒトRNA-seqカウントデータです。 [マップ後 |
+カウント情報取得 | single-end | ゲノム | アノテーション有 |
+QuasR(Gaidatzis\_2015)](http://www.iu.a.u-tokyo.ac.jp/~kadota/r_seq.html#postmapping_count_single_genome_txdb_QuasR)から得られます。コード自体はほぼ同じです。
+
+## 9\. 59,857 genes×6 samplesのリアルデータ([srp017142\_count\_bowtie.txt](http://www.iu.a.u-tokyo.ac.jp/~kadota/R_seq/srp017142_count_bowtie.txt))の場合：
+
+-----
+
+8.の入力ファイル([hoge9\_count\_gene.txt](http://www.iu.a.u-tokyo.ac.jp/~kadota/R_seq/SRP017142/hoge9_count_gene.txt))と本質的に同じもの(アノテーション情報が2014年3月ごろと若干古いだけ)です。
+[パイプライン | ゲノム | 発現変動 | 2群間 | 対応なし | 複製あり |
+SRP017142(Neyret-Kahn\_2013)](http://www.iu.a.u-tokyo.ac.jp/~kadota/r_seq.html#pipeline_genome_deg_2_unpaired_ari_srp017142)から得られます。コード自体はほぼ同じです。
+
 >   - [TCC](http://bioconductor.org/packages/release/bioc/html/TCC.html):
 >     [Sun et al., BMC
 >     Bioinformatics, 2013](http://www.ncbi.nlm.nih.gov/pubmed/23837715)
->   - [DESeq2](http://bioconductor.org/packages/release/bioc/html/DESeq2.html):
->     [Love et al., Genome
->     Biol., 2014](http://www.ncbi.nlm.nih.gov/pubmed/25516281)
+>   - TbT正規化法(TCCに実装されたDEGESアルゴリズム提唱論文)：[Kadota et al., Algorithms Mol.
+>     Biol., 2012](http://www.ncbi.nlm.nih.gov/pubmed/22475125)
+>   - [edgeR](http://bioconductor.org/packages/release/bioc/html/edgeR.html)
+>   - [TMM正規化法](http://bioinf.wehi.edu.au/folders/tmm_rnaseq/TMM.html)
+>   - An exact test for negative binomial distribution：[Robinson and
+>     Smyth,
+>     Biostatistics, 2008](http://www.ncbi.nlm.nih.gov/pubmed/17728317)
