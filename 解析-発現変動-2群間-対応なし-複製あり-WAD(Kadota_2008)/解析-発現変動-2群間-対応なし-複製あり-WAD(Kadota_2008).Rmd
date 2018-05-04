@@ -1,0 +1,124 @@
+---
+title: "解析 | 発現変動 | 2群間 | 対応なし | 複製あり | WAD(Kadota_2008)"
+author: "Kadota, Su"
+date: "2018年5月4日"
+output: rmarkdown::github_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE)
+```
+リファレンス：[解析 | 発現変動 | 2群間 | 対応なし | 複製あり | WAD(Kadota_2008)](http://www.iu.a.u-tokyo.ac.jp/~kadota/r_seq.html#analysis_deg_2_unpaired_ari_WAD)
+
+[TCC](http://bioconductor.org/packages/release/bioc/html/TCC.html)パッケージを用いてiDEGES/edgeR正規化を行ったデータを入力として、 WAD法([Kadota et al., 2008](http://www.ncbi.nlm.nih.gov/pubmed/18578891))を適用して発現変動遺伝子(Differentially expressed Genes; DEGs)検出を行うやり方を示します。 WAD法は統計的手法ではない(ヒューリスティックな方法)ので、出力ファイル中にp-valueやq-valueは存在しません。 それゆえ、FDR閾値を満たす遺伝子数、という概念もありません。
+「ファイル」−「ディレクトリの変更」で解析したいファイルを置いてあるディレクトリに移動し以下をコピペ。
+
+## 1. サンプルデータ13の10,000 genes × 6 samplesの[カウントデータ](http://www.iu.a.u-tokyo.ac.jp/~kadota/R_seq/data_hypodata_3vs3.txt)の場合：  
+
+--- 
+
+Biological replicatesを模倣したシミュレーションデータ(G1群3サンプル vs. G2群3サンプル)です。 gene_1〜gene_2000までがDEG (最初の1800個がG1群で高発現、残りの200個がG2群で高発現) gene_2001〜gene_10000までがnon-DEGであることが既知です。 
+
+### 0. 必要なパッケージをロード
+
+```{r package_download, message=FALSE}
+libs <- c("knitr", "dplyr", "caret", "devtools", "plotly")
+for (i in libs){
+  if( !is.element(i, .packages(all.available = TRUE)) ) {
+    install.packages(i)
+  }
+  library(i,character.only = TRUE)
+}
+library(TCC)
+```
+
+### 1. 設置及びファイルの読み込み
+```{r setup_environment}
+in_f <- "http://www.iu.a.u-tokyo.ac.jp/~kadota/R_seq/data_hypodata_3vs3.txt"
+# out_f1 <- "hoge1.txt"                  #出力ファイル名を指定してout_f1に格納
+param_G1 <- 3                          #G1群のサンプル数を指定
+param_G2 <- 3                          #G2群のサンプル数を指定
+param_FDR <- 0.05                      #false discovery rate (FDR)閾値を指定
+
+#入力ファイルの読み込み
+data <- read.table(in_f, 
+                   header=TRUE, 
+                   row.names=1, 
+                   sep="\t", 
+                   quote="")           #in_fで指定したファイルの読み込み
+
+kable(head(data, n=10))
+```
+
+### 2. 前処理（TCCオブジェクト作成）
+
+```{r create_object}
+#G1群を1、G2群を2としたベクトルdata.clを作成
+data.cl <- c(rep(1, param_G1), rep(2, param_G2))
+data.cl
+#TCCクラスオブジェクトtccを作成
+tcc <- new("TCC", data, data.cl)
+tcc
+#正規化を実行した結果をtccに格納
+tcc <- calcNormFactors(tcc, 
+                       norm.method="tmm", 
+                       test.method="edger",
+                       iteration=3, 
+                       FDR=0.1, 
+                       floorPDEG=0.05)
+tcc
+```
+
+### 3. DEG検出
+```{r deg}
+#DEG検出を実行した結果をtccに格納
+tcc <- estimateDE(tcc, test.method="wad")
+tcc
+#WAD統計量を抽出した結果をstatisticに格納
+statistic <- tcc$stat$testStat
+#WAD統計量でランキングした結果をrankingに格納
+ranking <- tcc$stat$rank               
+
+```
+
+### 4. ファイルに保存(テキストファイル)
+```{r save_text}
+#入力データの右側にDEG検出結果を結合したものをtmpに格納
+tmp <- cbind(rownames(tcc$count), tcc$count, statistic, ranking)
+kable(head(tmp))
+#tmpの中身を指定したファイル名で保存
+# write.table(tmp, out_f, sep="\t", append=F, quote=F, row.names=F)
+```
+
+### 5. AUC値を計算（Simulation Data Only）
+
+AUC値とConfusionMatrixを計算する。
+```{r auc}
+# ROCパッケージはCRANにいないため、インストールされていない場合は下記のコードを実行してインストールしてください。
+# source("https://bioconductor.org/biocLite.R")
+# biocLite("ROC")
+library(ROC)
+param_DEG <- 1:2000                    #DEGの位置を指定
+obj <- rep(0, nrow(data))           #初期値として全てが0の(non-DEGに相当)ベクトルobjを作成
+obj[param_DEG] <- 1                    #DEGの位置に1を代入
+AUC(rocdemo.sca(truth=obj, data=-ranking))#AUC計算
+
+```
+
+### 6. WAD関数  
+iDEGES/edgeR正規化後のデータを明示的に取得して、 estimateDE関数ではなくTCCパッケージ中のWAD関数を用いてWAD法を実行するやり方です。 WAD法はlog2変換後のデータを入力とすることを前提としており、発現レベルに相当する数値が1未満のものを1に変換してからlogをとっています。  
+```{r wad}
+#正規化後のデータを取り出してnormalizedに格納
+normalized <- getNormalizedData(tcc)
+kable(head(normalized))
+#DEG検出を実行した結果をtccに格納
+out <- WAD(normalized, data.cl, logged=F, floor=1)
+kable(head(out))
+#WAD統計量でランキングした結果をrankingに格納
+ranking <- out$rank                    
+```
+
+---
+
+> - WAD：[Kadota et al., Algorithms Mol. Biol., 2008](http://www.ncbi.nlm.nih.gov/pubmed/18578891)
+> - [TCC](http://bioconductor.org/packages/release/bioc/html/TCC.html): [Sun et al., BMC Bioinformatics, 2013](http://www.ncbi.nlm.nih.gov/pubmed/23837715)
