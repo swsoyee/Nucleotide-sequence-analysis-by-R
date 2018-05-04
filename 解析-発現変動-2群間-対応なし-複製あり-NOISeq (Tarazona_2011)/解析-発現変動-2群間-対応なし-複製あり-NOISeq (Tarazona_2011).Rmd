@@ -1,0 +1,195 @@
+---
+title: "解析 | 発現変動 | 2群間 | 対応なし | 複製あり | NOISeq (Tarazona_2011)"
+author: "Kadota, Su"
+date: "2018年5月4日"
+output: rmarkdown::github_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE)
+```
+リファレンス：[解析 | 発現変動 | 2群間 | 対応なし | 複製あり | NOISeq (Tarazona_2011)](http://www.iu.a.u-tokyo.ac.jp/~kadota/r_seq.html#deg_NOISeq)
+
+> NOISeq(参考文献1)のやり方を示します。二群間比較用です。  
+> ここでは、以下の3つのデータセットに対するやり方を示します：  
+> 1. Technical replicatesデータ(G1群5サンプル vs. G2群5サンプル)  
+> 2. Biological replicatesデータ(G1群3サンプル vs. G2群3サンプル: data_arab.txt)  
+> 3. Biological replicatesシミュレーションデータ(G1群3サンプル vs. G2群3サンプル: simdata_3vs3.txt)  
+> Technical replicatesのほうは、サンプルデータ2のSupplementaryTable2_changed.txtのデータです。  
+> Biological replicatesのほうは、NBPSeqパッケージに同梱されているArabidopsis(シロイヌナズナ)のデータ(サンプルデータ8のdata_arab.txt)です。  
+> この方法は負の二項分布（negative-binomial distribution；biological replicates用）やポアソン分布（Poisson distribution；technical replicates用）などの何らかの分布を仮定したパラメトリックな方法（edgeR, DESeq, baySeq, NBPSeq, GPseqなどが該当）とは異なり、ノンパラメトリックな方法です。  
+> replicateがないデータ（G1群1サンプル vs. G2群1サンプル）場合には（technical replicatesを想定して?!）noise distributionを作成し、replicatesがある場合には同一群内のデータを用いてnoise distributionを作成することでDEG or non-DEGの判定をするような仕組みになっています。  
+> また、この方法は転写物の長さ情報も（RPKM補正後のデータを使いたい場合には）使います。マニュアル中にはここでは長さ情報がない場合には"NA"という情報を含むファイル（SupplementaryTable2_changed_length.txt）を入力として与えるという選択肢を提供していますが、私が2012/06/19に試した限りではうまく動きません。 よって、以下では長さ情報を含むファイルを読み込まずに実行するやり方を示します。  
+> 「ファイル」−「ディレクトリの変更」で解析したいファイルを置いてあるディレクトリに移動し以下をコピペ。
+
+門田先生の`NOISeq`パッケージにつてのやり方がだいぶ古いので、2018/5/4に新しいやり方を自分で実装して見ました。使用したデータは門田先生が作ったシミュレーションデータ`data_hypodata_3vs3.txt`で、上記のテキストに説明したデータではない。
+
+## 1. サンプルデータ13の10,000 genes × 6 samplesの[カウントデータ](http://www.iu.a.u-tokyo.ac.jp/~kadota/R_seq/data_hypodata_3vs3.txt)の場合：  
+
+--- 
+
+Biological replicatesを模倣したシミュレーションデータ(G1群3サンプル vs. G2群3サンプル)です。 gene_1〜gene_2000までがDEG (最初の1800個がG1群で高発現、残りの200個がG2群で高発現) gene_2001〜gene_10000までがnon-DEGであることが既知です。 Biological replicatesデータと仮定し、正規化はTMMを採用する。
+
+### 0. 必要なパッケージをロード
+
+```{r package_download, message=FALSE}
+libs <- c("knitr", "dplyr", "caret", "devtools", "plotly")
+for (i in libs){
+  if( !is.element(i, .packages(all.available = TRUE)) ) {
+    install.packages(i)
+  }
+  library(i,character.only = TRUE)
+}
+
+# source("https://bioconductor.org/biocLite.R")
+# biocLite("NOISeq")
+library(NOISeq)
+```
+
+### 1. 設置及びファイルの読み込み
+```{r setup_environment}
+in_f <- "http://www.iu.a.u-tokyo.ac.jp/~kadota/R_seq/data_hypodata_3vs3.txt"
+# out_f1 <- "hoge1.txt"                  #出力ファイル名を指定してout_f1に格納
+param_G1 <- 3                          #G1群のサンプル数を指定
+param_G2 <- 3                          #G2群のサンプル数を指定
+param_FDR <- 0.05                      #false discovery rate (FDR)閾値を指定
+
+#入力ファイルの読み込み
+data <- read.table(in_f, 
+                   header=TRUE, 
+                   row.names=1, 
+                   sep="\t", 
+                   quote="")           #in_fで指定したファイルの読み込み
+
+kable(head(data, n=10))
+```
+
+### 2. 前処理（NOISeqオブジェクト作成）
+
+```{r create_object}
+#G1群を1、G2群を2としたベクトルdata.clを作成
+data.cl <- c(rep(1, param_G1), rep(2, param_G2))
+myfactors <- data.frame("data.cl"=data.cl)
+myfactors
+#NOISeqクラスオブジェクトを作成
+mydata <- readData(data = data, factors = myfactors)
+mydata
+
+```
+
+### 3. DEG検出
+```{r deg}
+#DEG検出を実行した結果
+mynoiseqbio <- noiseqbio(mydata, 
+                         k = 0.5, 
+                         norm = "tmm", 
+                         factor = "data.cl",
+                         lc = 1, 
+                         r = 20, 
+                         adj = 1.5, 
+                         plot = FALSE, 
+                         a0per = 0.9, 
+                         random.seed = 12345,
+                         filter = 1)
+              
+kable(head(mynoiseqbio@results[[1]]))
+```
+
+### 4. ファイルに保存(テキストファイル)
+```{r save_text}
+#入力データの右側にDEG検出結果を結合したものをtmpに格納
+tmp <- mynoiseqbio@results[[1]]
+tmp$ranking <- rank(1-tmp$prob)
+#tmpの中身を指定したファイル名で保存
+# write.table(tmp, out_f, sep="\t", append=F, quote=F, row.names=F)
+```
+
+### 5. DEGを選択
+```{r select deg}
+# 全てのDEGを選択、DEGである可能性しきい値は0.8
+deg_all <- degenes(mynoiseqbio, q = 0.8, M = NULL)
+# Up-regulatedのDEGを選択、DEGである可能性しきい値は0.8
+deg_up <- degenes(mynoiseqbio, q = 0.8, M = "up")
+# Down-regulatedのDEGを選択、DEGである可能性しきい値は0.8
+deg_down <- degenes(mynoiseqbio, q = 0.8, M = "down")
+```
+
+### 6. Expression plotとMDPlot
+```{r plot}
+DE.plot(mynoiseqbio, q = 0.9, graphic = "expr", log.scale = TRUE)
+
+# Plotlyを用いた方法
+x <- cut(tmp$prob, breaks = c(0, 0.8, 0.9, 1))
+#LegendのLevelをリネームする
+levels(x) <- list("non-DEG"="(0,0.8]",
+                  "DEG(Probability > 0.8)"="(0.8,0.9]",
+                  "DEG(Probability > 0.9)"="(0.9,1]")  
+
+plot_ly(data = tmp, 
+        x = ~tmp[,1], 
+        y = ~tmp[,2], 
+        mode = "marker",
+        type = "scatter",
+        color = ~x,
+        colors = c("#000000", "#FFA500", "#B22222"),
+        marker = list(size = 3),
+        hoverinfo = 'text',
+        text = ~paste("</br>Gene: ", rownames(tmp),
+                     "</br>Probability: ", paste((round(prob, 4) * 100), '%'),
+                     "</br>log2(FoldChange): ", round(log2FC, 4))) %>%
+  layout(xaxis = list(title = "Group 1 Mean", type = "log"),
+         yaxis = list(title = "Group 2 Mean", type = "log"),
+         title = "Expression Plot",
+         legend = list(orientation = 'h'))
+
+DE.plot(mynoiseqbio, q = 0.8, graphic = "MD")
+
+# Plotlyを用いた方法
+x <- cut(tmp$prob, breaks = c(0, 0.8, 0.9, 1))
+#LegendのLevelをリネームする
+levels(x) <- list("non-DEG"="(0,0.8]",
+                  "DEG(Probability > 0.8)"="(0.8,0.9]",
+                  "DEG(Probability > 0.9)"="(0.9,1]")  
+
+plot_ly(data = tmp,
+        x = ~log2FC,
+        y = ~abs(tmp[,1]-tmp[,2]),
+        type = "scatter",
+        mode = "marker",
+        color = ~x,
+        colors = c("#000000", "#FFA500", "#B22222"),
+        marker = list(size = 3),
+        hoverinfo = 'text',
+        text = ~paste("</br>Gene: ", rownames(tmp),
+                     "</br>Probability: ", paste((round(prob, 4) * 100), '%'),
+                     "</br>log2(FoldChange): ", round(log2FC, 4))) %>%
+  layout(xaxis = list(title = "M: log2FC"),
+         yaxis = list(title = "D", type="log"),
+         title = "MD Plot",
+         legend = list(orientation = 'h'))
+```
+
+### 7. AUC値を計算（Simulation Data Only）
+
+AUC値とConfusionMatrixを計算する。
+```{r auc}
+# ROCパッケージはCRANにいないため、インストールされていない場合は下記のコードを実行してインストールしてください。
+# source("https://bioconductor.org/biocLite.R")
+# biocLite("ROC")
+library(ROC)
+param_DEG <- 1:2000                    #DEGの位置を指定
+obj <- rep(0, nrow(data))           #初期値として全てが0の(non-DEGに相当)ベクトルobjを作成
+obj[param_DEG] <- 1                    #DEGの位置に1を代入
+AUC(rocdemo.sca(truth=obj, data=-tmp$ranking))#AUC計算
+
+param_prob <- 0.9
+deg_count <- sum(tmp$prob > param_prob, na.rm = TRUE)
+prediction <- if_else(tmp$ranking <= deg_count, 1, 0)
+confusionMatrix(factor(prediction), factor(obj))
+```
+
+
+---
+
+> - [NOISeqのwebページ](http://bioinfo.cipf.es/noiseq)
+> - [NOISeq](http://bioconductor.org/packages/release/bioc/html/NOISeq.html): [Tarazona et al., Genome Res., 2011](http://www.ncbi.nlm.nih.gov/pubmed/21903743)
